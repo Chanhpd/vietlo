@@ -1,0 +1,52 @@
+lottery_type: "power655" # Options: "power655", "mega645"
+
+urls:
+  power655: "https://raw.githubusercontent.com/vietvudanh/vietlott-data/main/data/power655.jsonl"
+  mega645: "https://raw.githubusercontent.com/vietvudanh/vietlott-data/main/data/power645.jsonl"
+
+lottery_specs:
+  power655:
+    name: "Vietlott Power 6/55"
+    code: "power655"
+    raw_file: "power655.jsonl"
+    total_numbers: 55
+    pick_count: 6
+    has_bonus: true
+    ticket_price: 10000
+    draw_days: ["Tuesday", "Thursday", "Saturday"]
+    prize_structure:
+      jackpot_1: 30000000000 # 30 tỷ tối thiểu
+      jackpot_2: 3000000000  # 3 tỷ tối thiểu
+      first: 40000000        # 40 triệu
+      second: 500000         # 500 nghìn
+      third: 50000           # 50 nghìn
+  mega645:
+    name: "Vietlott Mega 6/45"
+    code: "mega645"
+    raw_file: "power645.jsonl"
+    total_numbers: 45
+    pick_count: 6
+    has_bonus: false
+    ticket_price: 10000
+    draw_days: ["Wednesday", "Friday", "Sunday"]
+    prize_structure:
+      jackpot_1: 12000000000 # 12 tỷ tối thiểu
+      first: 10000000        # 10 triệu
+      second: 300000         # 300 nghìn
+      third: 30000           # 30 nghìn
+
+backtest:
+  test_draws: 200            # Đánh giá trên 200 kỳ gần nhất (~ 1.5 năm dữ liệu)
+  tickets_per_draw: 5        # Số vé mỗi chiến lược mua tại mỗi kỳ thử nghiệm
+  lookback_window: 50        # Cửa sổ quan sát cho hot/cold frequency
+  random_seed: 42
+
+prediction:
+  suggest_tickets_count: 5   # Số lượng bộ số gợi ý cho kỳ kế tiếp
+
+paths:
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+  reports_dir: "reports"
+  figures_dir: "reports/figures"
+

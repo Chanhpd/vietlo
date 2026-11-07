@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vietlott Data Science Dashboard - Vietlott Power 6/55</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --primary: #1e293b;
+            --accent: #2563eb;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --warning: #d97706;
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: white;
+            padding: 32px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        }
+        header h1 { margin: 0 0 8px 0; font-size: 28px; }
+        header p { margin: 0; opacity: 0.85; font-size: 15px; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(255,255,255,0.2);
+            margin-top: 12px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .card h3 { margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase; color: var(--text-muted); }
+        .card .metric { font-size: 28px; font-weight: 700; color: var(--text-main); }
+        .card .sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 32px 0 16px 0;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        th {
+            background: #f1f5f9;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        tr:last-child td { border-bottom: none; }
+        .tag-hot { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+        .tag-cold { background: #e0f2fe; color: #075985; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(540px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .chart-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .chart-box img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+        .ticket-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .ball {
+            display: inline-flex;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #1e293b;
+            font-weight: 700;
+            font-size: 14px;
+            align-items: center;
+            justify-content: center;
+            margin-right: 6px;
+        }
+        .ball-special {
+            background: #ef4444;
+            color: white;
+        }
+        .disclaimer {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 32px 0;
+            font-size: 14px;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Vietlott Data Science & Backtest Dashboard</h1>
+            <p>Hệ thống phân tích kiểm định ngẫu nhiên và backtesting chiến lược dự đoán Vietlott Power 6/55</p>
+            <div class="badge">Phân tích 1,420 kỳ quay (2017-08-01 đến 2026-11-05)</div>
+        </header>
+
+        <div class="disclaimer">
+            <strong>Lưu ý quan trọng từ Data Science:</strong> Mọi thử nghiệm đều chỉ ra xổ số Vietlott tuân thủ nghiêm ngặt quy luật ngẫu nhiên độc lập ($p$-value > 0.05). Các chiến lược và mô hình không thể đánh bại kết quả chọn ngẫu nhiên và đều có kỳ vọng lợi nhuận âm theo thiết kế xác suất.
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Tổng số kỳ quay</h3>
+                <div class="metric">1,420</div>
+                <div class="sub">Từ 2017 đến nay</div>
+            </div>
+            <div class="card">
+                <h3>Kiểm định Phân bố Đều</h3>
+                <div class="metric" style="color: var(--success);">Chấp nhận H0</div>
+                <div class="sub">p-value: 0.5968</div>
+            </div>
+            <div class="card">
+                <h3>Kỳ vọng Hits/Vé</h3>
+                <div class="metric">0.6545</div>
+                <div class="sub">Lý thuyết cơ học</div>
+            </div>
+            <div class="card">
+                <h3>Số chiến lược vượt Random</h3>
+                <div class="metric" style="color: var(--danger);">0 / 8</div>
+                <div class="sub">Không có ý nghĩa thống kê</div>
+            </div>
+        </div>
+
+        <div class="section-title">📊 Biểu đồ Phân tích & Tần suất</div>
+        <div class="charts-grid">
+            <div class="chart-box">
+                <img src="figures/frequencies.png" alt="Tần suất">
+            </div>
+            <div class="chart-box">
+                <img src="figures/gaps.png" alt="Số kỳ chưa về">
+            </div>
+            <div class="chart-box">
+                <img src="figures/consecutive_repeats.png" alt="Số lặp liên tiếp">
+            </div>
+            <div class="chart-box">
+                <img src="figures/parity_and_sums.png" alt="Chẵn lẻ và tổng">
+            </div>
+        </div>
+
+        <div class="section-title">🧪 Kết quả Backtest (100 kỳ gần nhất)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Chiến lược</th>
+                    <th>Số vé</th>
+                    <th>Hits TB/vé</th>
+                    <th>Tỷ lệ trúng giải</th>
+                    <th>Chi phí (VNĐ)</th>
+                    <th>Tiền thưởng (VNĐ)</th>
+                    <th>ROI (%)</th>
+                    <th>P-value vs Random</th>
+                </tr>
+            </thead>
+            <tbody>
+        
+                <tr>
+                    <td><strong>Random Baseline</strong></td>
+                    <td>500</td>
+                    <td>0.65</td>
+                    <td>1.2%</td>
+                    <td>5,000,000</td>
+                    <td>300,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-94.0%</td>
+                    <td>1.0</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>Hot Frequency (W=50)</strong></td>
+                    <td>500</td>
+                    <td>0.742</td>
+                    <td>1.0%</td>
+                    <td>5,000,000</td>
+                    <td>250,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-95.0%</td>
+                    <td>0.044</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>Cold / Overdue</strong></td>
+                    <td>500</td>
+                    <td>0.762</td>
+                    <td>1.4%</td>
+                    <td>5,000,000</td>
+                    <td>350,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-93.0%</td>
+                    <td>0.0155</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>Hybrid Balanced</strong></td>
+                    <td>500</td>
+                    <td>0.754</td>
+                    <td>1.4%</td>
+                    <td>5,000,000</td>
+                    <td>800,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-84.0%</td>
+                    <td>0.0279</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>ML Ranker (LogisticReg)</strong></td>
+                    <td>500</td>
+                    <td>0.638</td>
+                    <td>1.6%</td>
+                    <td>5,000,000</td>
+                    <td>850,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-83.0%</td>
+                    <td>0.7933</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>XGBoost Ranker</strong></td>
+                    <td>500</td>
+                    <td>0.694</td>
+                    <td>1.8%</td>
+                    <td>5,000,000</td>
+                    <td>900,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-82.0%</td>
+                    <td>0.3427</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>Markov Transition</strong></td>
+                    <td>500</td>
+                    <td>0.704</td>
+                    <td>1.4%</td>
+                    <td>5,000,000</td>
+                    <td>350,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-93.0%</td>
+                    <td>0.2469</td>
+                </tr>
+            
+                <tr>
+                    <td><strong>Game Theory (Anti-Crowd)</strong></td>
+                    <td>500</td>
+                    <td>0.588</td>
+                    <td>1.0%</td>
+                    <td>5,000,000</td>
+                    <td>250,000</td>
+                    <td style="color: var(--danger); font-weight: 700;">-95.0%</td>
+                    <td>0.165</td>
+                </tr>
+            
+            </tbody>
+        </table>
+
+        <div class="charts-grid">
+            <div class="chart-box">
+                <img src="figures/backtest_cumulative_hits.png" alt="Hits tích lũy">
+            </div>
+            <div class="chart-box">
+                <img src="figures/backtest_cumulative_pnl.png" alt="Lợi nhuận ròng">
+            </div>
+        </div>
+
+        <div class="section-title">🔮 Bộ số gợi ý cho kỳ tới (Tham khảo thử nghiệm)</div>
+        
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Random Baseline</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">02</span><span class="ball">12</span><span class="ball">29</span><span class="ball">39</span><span class="ball">47</span><span class="ball">48</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 177)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">27</span><span class="ball">29</span><span class="ball">38</span><span class="ball">40</span><span class="ball">46</span><span class="ball">47</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 227)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">06</span><span class="ball">18</span><span class="ball">32</span><span class="ball">38</span><span class="ball">47</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 195)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">03</span><span class="ball">05</span><span class="ball">23</span><span class="ball">36</span><span class="ball">45</span><span class="ball">46</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 158)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">03</span><span class="ball">09</span><span class="ball">11</span><span class="ball">12</span><span class="ball">42</span><span class="ball">46</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 123)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Hot Frequency (W=50)</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">01</span><span class="ball">07</span><span class="ball">09</span><span class="ball">11</span><span class="ball">18</span><span class="ball">24</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 70)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">01</span><span class="ball">18</span><span class="ball">23</span><span class="ball">25</span><span class="ball">41</span><span class="ball">45</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 153)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">11</span><span class="ball">14</span><span class="ball">20</span><span class="ball">27</span><span class="ball">31</span><span class="ball">55</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 158)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">07</span><span class="ball">11</span><span class="ball">14</span><span class="ball">22</span><span class="ball">25</span><span class="ball">41</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 120)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">07</span><span class="ball">11</span><span class="ball">18</span><span class="ball">24</span><span class="ball">27</span><span class="ball">41</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 128)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Cold / Overdue</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">02</span><span class="ball">05</span><span class="ball">17</span><span class="ball">25</span><span class="ball">40</span><span class="ball">47</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 136)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">01</span><span class="ball">02</span><span class="ball">04</span><span class="ball">11</span><span class="ball">15</span><span class="ball">53</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 86)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">02</span><span class="ball">15</span><span class="ball">40</span><span class="ball">47</span><span class="ball">48</span><span class="ball">53</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 205)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">01</span><span class="ball">03</span><span class="ball">04</span><span class="ball">05</span><span class="ball">47</span><span class="ball">48</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 108)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">04</span><span class="ball">36</span><span class="ball">40</span><span class="ball">47</span><span class="ball">48</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 226)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Hybrid Balanced</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">24</span><span class="ball">28</span><span class="ball">31</span><span class="ball">32</span><span class="ball">33</span><span class="ball">36</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 184)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">07</span><span class="ball">08</span><span class="ball">09</span><span class="ball">30</span><span class="ball">44</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 149)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">10</span><span class="ball">15</span><span class="ball">20</span><span class="ball">31</span><span class="ball">36</span><span class="ball">38</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 150)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">16</span><span class="ball">17</span><span class="ball">29</span><span class="ball">31</span><span class="ball">36</span><span class="ball">38</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 167)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">11</span><span class="ball">15</span><span class="ball">24</span><span class="ball">25</span><span class="ball">29</span><span class="ball">36</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 140)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: ML Ranker (LogisticReg)</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">03</span><span class="ball">10</span><span class="ball">15</span><span class="ball">31</span><span class="ball">43</span><span class="ball">47</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 149)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">05</span><span class="ball">15</span><span class="ball">22</span><span class="ball">31</span><span class="ball">48</span><span class="ball">49</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 170)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">04</span><span class="ball">05</span><span class="ball">10</span><span class="ball">32</span><span class="ball">52</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 157)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">11</span><span class="ball">31</span><span class="ball">32</span><span class="ball">39</span><span class="ball">49</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 216)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">03</span><span class="ball">05</span><span class="ball">31</span><span class="ball">39</span><span class="ball">43</span><span class="ball">49</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 170)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: XGBoost Ranker</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">08</span><span class="ball">10</span><span class="ball">11</span><span class="ball">12</span><span class="ball">32</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 127)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">07</span><span class="ball">08</span><span class="ball">09</span><span class="ball">12</span><span class="ball">15</span><span class="ball">35</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 86)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">10</span><span class="ball">11</span><span class="ball">32</span><span class="ball">35</span><span class="ball">43</span><span class="ball">49</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 180)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">23</span><span class="ball">35</span><span class="ball">45</span><span class="ball">46</span><span class="ball">47</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 250)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">07</span><span class="ball">15</span><span class="ball">27</span><span class="ball">43</span><span class="ball">47</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 193)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Markov Transition</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">08</span><span class="ball">33</span><span class="ball">36</span><span class="ball">42</span><span class="ball">49</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 219)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">01</span><span class="ball">21</span><span class="ball">22</span><span class="ball">29</span><span class="ball">41</span><span class="ball">49</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 163)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">01</span><span class="ball">19</span><span class="ball">21</span><span class="ball">34</span><span class="ball">36</span><span class="ball">41</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 152)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">08</span><span class="ball">22</span><span class="ball">36</span><span class="ball">40</span><span class="ball">48</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 205)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">08</span><span class="ball">33</span><span class="ball">34</span><span class="ball">42</span><span class="ball">44</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 212)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Game Theory (Anti-Crowd)</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">23</span><span class="ball">27</span><span class="ball">34</span><span class="ball">38</span><span class="ball">52</span><span class="ball">55</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 229)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">15</span><span class="ball">31</span><span class="ball">36</span><span class="ball">41</span><span class="ball">49</span><span class="ball">55</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 227)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">03</span><span class="ball">18</span><span class="ball">32</span><span class="ball">36</span><span class="ball">49</span><span class="ball">51</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 189)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">18</span><span class="ball">21</span><span class="ball">40</span><span class="ball">49</span><span class="ball">52</span><span class="ball">55</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 235)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #5:</span>
+                    <span class="ball">01</span><span class="ball">10</span><span class="ball">41</span><span class="ball">46</span><span class="ball">49</span><span class="ball">54</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 201)</span>
+                </div>
+                </div>
+            <div class="ticket-box">
+                <h4 style="margin: 0 0 12px 0;">Chiến lược: Wheeling System (Bảo đảm 100.0% 3-if-4)</h4>
+            
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #1:</span>
+                    <span class="ball">03</span><span class="ball">15</span><span class="ball">18</span><span class="ball">32</span><span class="ball">45</span><span class="ball">47</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 160)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #2:</span>
+                    <span class="ball">07</span><span class="ball">08</span><span class="ball">11</span><span class="ball">18</span><span class="ball">27</span><span class="ball">32</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 103)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #3:</span>
+                    <span class="ball">03</span><span class="ball">08</span><span class="ball">15</span><span class="ball">27</span><span class="ball">45</span><span class="ball">47</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 145)</span>
+                </div>
+                
+                <div style="margin-bottom: 8px; display: flex; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; width: 60px; color: var(--text-muted);">Vé #4:</span>
+                    <span class="ball">03</span><span class="ball">07</span><span class="ball">11</span><span class="ball">15</span><span class="ball">18</span><span class="ball">45</span>
+                    <span style="font-size: 13px; color: var(--text-muted); margin-left: 12px;">(Tổng: 99)</span>
+                </div>
+                </div>
+        <footer style="margin-top: 40px; padding: 20px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted); text-align: center;">
+            Hệ thống Vietlott Analytics & Backtesting Engine • Tự động hóa cập nhật dữ liệu và kiểm định khoa học
+        </footer>
+    </div>
+</body>
+</html>

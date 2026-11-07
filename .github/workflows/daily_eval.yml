@@ -1,0 +1,45 @@
+name: Vietlott Daily Auto Evaluation & Notifications
+
+on:
+  schedule:
+    # 11:45 UTC = 18:45 GMT+7 (Every day after Vietlott draw completes at 18:30)
+    - cron: '45 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  daily-evaluate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Daily Live Evaluation for Power 6/55 & Mega 6/45
+        run: |
+          python -c "
+          from src.tracker import DailyModelTracker
+          for code in ['power655', 'mega645']:
+              tracker = DailyModelTracker(code)
+              res = tracker.evaluate_latest_draw()
+              print(f'Evaluated {code}: draw {res[\"latest_draw_id\"]} -> next {res[\"new_prediction_for_draw\"]}')
+          "
+
+      - name: Commit and Push Updated Tracker Data
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/*_tracker.csv data/*_pending_predictions.json
+          git commit -m "Auto-update daily evaluation & predictions [skip ci]" || echo "No changes to commit"
+          git push
+
