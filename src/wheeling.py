@@ -6,7 +6,7 @@ that mathematically guarantees at least a t-match prize if m numbers from the po
 """
 
 from itertools import combinations
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -20,10 +20,11 @@ class CombinatorialWheeler:
         candidate_pool: List[int],
         target_guarantee: int = 3,
         condition_drawn: int = 4,
-        max_tickets: int = 10
+        max_tickets: int = 10,
+        number_weights: Optional[Dict[int, float]] = None
     ) -> Dict[str, Any]:
         """
-        Generate an abbreviated wheel using greedy set-cover algorithm.
+        Generate an abbreviated wheel using a probability-weighted greedy set-cover algorithm.
         Guarantees that if `condition_drawn` winning numbers fall inside `candidate_pool`,
         at least one ticket will match at least `target_guarantee` numbers.
         """
@@ -36,11 +37,10 @@ class CombinatorialWheeler:
         if v < k:
             raise ValueError(f"Candidate pool size ({v}) must be >= pick count ({k})")
 
-        # All possible 6-number tickets from the candidate pool
         all_possible_tickets = list(combinations(candidate_pool, k))
+        full_wheel_count = len(all_possible_tickets)
 
-        # If pool is small enough, return full wheel or slice
-        if len(all_possible_tickets) <= max_tickets:
+        if full_wheel_count <= max_tickets:
             selected_tickets = [list(ticket) for ticket in all_possible_tickets]
             coverage = self.calculate_coverage(selected_tickets, candidate_pool, t, m)
             return {
@@ -50,37 +50,48 @@ class CombinatorialWheeler:
                 "condition_drawn": m,
                 "tickets": selected_tickets,
                 "ticket_count": len(selected_tickets),
+                "full_wheel_tickets": full_wheel_count,
+                "cost_saving_pct": round((1.0 - len(selected_tickets) / max(1, full_wheel_count)) * 100.0, 1),
                 "guarantee_coverage_pct": coverage
             }
 
-        # Subsets of size m that could be drawn from our pool
         target_subsets = list(combinations(candidate_pool, m))
         uncovered_subsets = set(target_subsets)
 
-        # Precompute which ticket covers which m-subsets
-        # A ticket of size 6 covers an m-subset if len(ticket.intersection(m_subset)) >= t
         ticket_covers: Dict[Tuple[int, ...], Set[Tuple[int, ...]]] = {}
         for ticket in all_possible_tickets:
             t_set = set(ticket)
             covered = {sub for sub in target_subsets if len(t_set.intersection(sub)) >= t}
             ticket_covers[ticket] = covered
 
-        selected_tickets: List[List[int]] = []
-        available_tickets = set(all_possible_tickets)
+        # Precompute intrinsic quality score for each candidate ticket (weights + structural parity/balance)
+        w_map = number_weights if number_weights is not None else {n: 1.0 for n in candidate_pool}
+        ticket_quality: Dict[Tuple[int, ...], float] = {}
+        for ticket in all_possible_tickets:
+            w_sum = sum(float(w_map.get(n, 1.0)) for n in ticket)
+            odd_cnt = sum(1 for n in ticket if n % 2 != 0)
+            parity_bonus = 0.25 if 2 <= odd_cnt <= 4 else 0.0
+            ticket_quality[ticket] = w_sum + parity_bonus
 
-        while uncovered_subsets and len(selected_tickets) < max_tickets:
-            # Pick ticket that covers the most remaining uncovered subsets
-            best_ticket = max(
-                available_tickets,
-                key=lambda tk: len(ticket_covers[tk].intersection(uncovered_subsets)),
-                default=None
-            )
+        selected_tickets: List[List[int]] = []
+        available_tickets = list(all_possible_tickets)
+
+        while uncovered_subsets and len(selected_tickets) < max_tickets and available_tickets:
+            # Primary objective: number of newly covered m-subsets
+            # Secondary objective: avoid >3 shared numbers with any existing ticket
+            # Tertiary tie-breaker: intrinsic weight + low total overlap
+            def score_candidate(tk: Tuple[int, ...]) -> Tuple[int, int, float]:
+                new_cov = len(ticket_covers[tk].intersection(uncovered_subsets))
+                max_ov = max((len(set(tk).intersection(s)) for s in selected_tickets), default=0)
+                overlap_pen = sum(len(set(tk).intersection(s)) for s in selected_tickets) * 0.15
+                return (new_cov, -max(0, max_ov - 3), ticket_quality[tk] - overlap_pen)
+
+            best_ticket = max(available_tickets, key=score_candidate, default=None)
             if not best_ticket:
                 break
 
             covers_now = ticket_covers[best_ticket].intersection(uncovered_subsets)
             if not covers_now and len(selected_tickets) >= 3:
-                # Diminishing returns, pool already well covered
                 break
 
             selected_tickets.append(list(best_ticket))
@@ -96,6 +107,8 @@ class CombinatorialWheeler:
             "condition_drawn": m,
             "tickets": selected_tickets,
             "ticket_count": len(selected_tickets),
+            "full_wheel_tickets": full_wheel_count,
+            "cost_saving_pct": round((1.0 - len(selected_tickets) / max(1, full_wheel_count)) * 100.0, 1),
             "guarantee_coverage_pct": coverage
         }
 

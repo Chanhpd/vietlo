@@ -21,6 +21,7 @@ from src.strategies import (
     MarkovTransitionStrategy,
     MLRankingStrategy,
     RandomBaselineStrategy,
+    RecursiveAdaptiveStrategy,
     XGBoostRankingStrategy,
 )
 from src.wheeling import CombinatorialWheeler
@@ -133,7 +134,10 @@ class DailyModelTracker:
         next_id = f"{int(latest_id) + 1:05d}"
         total_numbers = 55 if self.lottery_code == "power655" else 45
 
+        rec_strat = RecursiveAdaptiveStrategy(total_numbers, 6, alpha=0.04)
         strategies = {
+            "Recursive Adaptive (Hedge+Wheel)": rec_strat,
+            "Game Theory (Anti-Crowd)": GameTheoryAntiCrowdStrategy(total_numbers, 6),
             "Hybrid Balanced": HybridStrategy(total_numbers, 6, 50),
             "XGBoost Ranker": XGBoostRankingStrategy(total_numbers, 6, 200),
             "Markov Transition": MarkovTransitionStrategy(total_numbers, 6),
@@ -143,16 +147,20 @@ class DailyModelTracker:
 
         fresh_preds = {}
         for s_name, strat in strategies.items():
-            raw_tickets = strat.generate_tickets(df, num_tickets=3)
+            raw_tickets = strat.generate_tickets(df, num_tickets=4)
             fresh_preds[s_name] = [[int(x) for x in t] for t in raw_tickets]
 
-        # Also add Wheeling System
+        # Combine Recursive Adaptive Top-10 Pool with Probability-Weighted Wheeling System (3-if-4)
         wheeler = CombinatorialWheeler(pick_count=6)
-        draw_sets = [set(nums) for nums in df["main_numbers"]]
-        gaps = {n: (len(draw_sets) - 1 - [i for i, s in enumerate(draw_sets) if n in s][-1]) for n in range(1, total_numbers + 1)}
-        top_pool = sorted([n for n, _ in sorted(gaps.items(), key=lambda x: x[1], reverse=True)[:10]])
-        wheel_res = wheeler.generate_abbreviated_wheel(top_pool, target_guarantee=3, condition_drawn=4, max_tickets=4)
-        fresh_preds["Wheeling 3-if-4"] = [[int(x) for x in t] for t in wheel_res["tickets"]]
+        top_pool, pool_weights = rec_strat.get_top_candidates(df, top_k=10)
+        wheel_res = wheeler.generate_abbreviated_wheel(
+            top_pool,
+            target_guarantee=3,
+            condition_drawn=4,
+            max_tickets=4,
+            number_weights=pool_weights
+        )
+        fresh_preds["Wheeling 3-if-4 (Recursive Top-10)"] = [[int(x) for x in t] for t in wheel_res["tickets"]]
 
         self.record_pending_prediction(next_id, fresh_preds)
 

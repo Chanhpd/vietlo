@@ -20,6 +20,13 @@ def test_ev_calculator_power655():
     res_300 = calc.calculate_expected_value(300e9)
     assert res_300["is_positive_ev"]
     assert res_300["total_expected_value_vnd"] > 10000.0
+    assert res_300["kelly_fraction_pct"] > 0.0
+
+    # Anti-crowd mode should yield higher EV and lower break-even threshold than standard mode
+    res_std = calc.calculate_expected_value(265e9, estimated_tickets_sold=3000000, anti_crowd_mode=False)
+    res_ac = calc.calculate_expected_value(265e9, estimated_tickets_sold=3000000, anti_crowd_mode=True)
+    assert res_ac["total_expected_value_vnd"] > res_std["total_expected_value_vnd"]
+    assert res_ac["anti_crowd_break_even_billion"] < res_std["standard_break_even_billion"]
 
 
 def test_ev_calculator_mega645():
@@ -33,4 +40,3 @@ def test_ev_calculator_mega645():
     # At 120 billion, EV becomes positive
     res_120 = calc.calculate_expected_value(120e9)
     assert res_120["is_positive_ev"]
-

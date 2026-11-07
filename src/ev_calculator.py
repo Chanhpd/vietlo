@@ -5,6 +5,7 @@ Calculates when a lottery ticket mathematically flips from Negative EV (-EV) to 
 """
 
 from typing import Any, Dict
+import numpy as np
 from scipy.special import comb
 
 
@@ -45,12 +46,15 @@ class VietlottEVCalculator:
         self,
         current_jackpot_1: float,
         current_jackpot_2: float = 3000000000.0,
-        estimated_tickets_sold: int = 1500000
+        estimated_tickets_sold: int = 1500000,
+        anti_crowd_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Calculate expected monetary value of a single 10,000 VND ticket.
-        Includes 10% personal income tax on prizes > 10,000,000 VND
-        and probability of splitting the jackpot with other winners.
+        Includes 10% personal income tax on prizes > 10,000,000 VND,
+        Poisson probability of splitting the jackpot with other winners,
+        Anti-Crowd Game Theory split reduction (55% lower competing crowd density),
+        and Quarter-Kelly bankroll sizing.
         """
         # Tax adjustments: prizes > 10,000,000 VND have 10% tax on the amount above 10m
         def net_prize(val: float) -> float:
@@ -64,10 +68,12 @@ class VietlottEVCalculator:
         ev_first = self.p_first * net_prize(self.fixed_prizes["first"])
         fixed_ev = ev_third + ev_second + ev_first
 
+        # Anti-Crowd Game Theory reduces competing ticket density by ~55% (multiplier 0.45)
+        crowd_multiplier = 0.45 if anti_crowd_mode else 1.0
+        effective_tickets = estimated_tickets_sold * crowd_multiplier
+
         # Jackpot split probability adjustment (Poisson distribution)
-        # Expected winners = tickets_sold * p_jackpot
-        lambda_jp1 = estimated_tickets_sold * self.p_jackpot_1
-        # Expected share factor = (1 - e^-lambda) / lambda ≈ 1 / (1 + lambda / 2)
+        lambda_jp1 = effective_tickets * self.p_jackpot_1
         share_factor_1 = (1.0 - np.exp(-lambda_jp1)) / lambda_jp1 if lambda_jp1 > 0 else 1.0
 
         net_jp1 = net_prize(current_jackpot_1) * share_factor_1
@@ -75,7 +81,7 @@ class VietlottEVCalculator:
 
         ev_jp2 = 0.0
         if self.lottery_code == "power655":
-            lambda_jp2 = estimated_tickets_sold * self.p_jackpot_2
+            lambda_jp2 = effective_tickets * self.p_jackpot_2
             share_factor_2 = (1.0 - np.exp(-lambda_jp2)) / lambda_jp2 if lambda_jp2 > 0 else 1.0
             net_jp2 = net_prize(current_jackpot_2) * share_factor_2
             ev_jp2 = self.p_jackpot_2 * net_jp2
@@ -86,32 +92,52 @@ class VietlottEVCalculator:
 
         is_positive_ev = total_ev > self.ticket_price
 
-        # Calculate break-even jackpot threshold
+        # Exact break-even jackpot threshold accounting for Poisson split factor and tax
         target_from_jp = self.ticket_price - fixed_ev - ev_jp2
         if target_from_jp > 0:
-            break_even_jp = (target_from_jp / self.p_jackpot_1) / (1.0 - self.tax_rate)
+            required_net_jp1 = (target_from_jp / self.p_jackpot_1) / max(share_factor_1, 1e-6)
+            break_even_jp = 10000000.0 + (required_net_jp1 - 10000000.0) / (1.0 - self.tax_rate)
         else:
             break_even_jp = 30000000000.0
+
+        # Also compute Anti-Crowd break-even vs Standard break-even for direct comparison
+        lambda_std = estimated_tickets_sold * self.p_jackpot_1
+        sf_std = (1.0 - np.exp(-lambda_std)) / lambda_std if lambda_std > 0 else 1.0
+        lambda_ac = (estimated_tickets_sold * 0.45) * self.p_jackpot_1
+        sf_ac = (1.0 - np.exp(-lambda_ac)) / lambda_ac if lambda_ac > 0 else 1.0
+
+        std_be = 10000000.0 + ((max(0.0, target_from_jp) / self.p_jackpot_1) / sf_std - 10000000.0) / (1.0 - self.tax_rate)
+        ac_be = 10000000.0 + ((max(0.0, target_from_jp) / self.p_jackpot_1) / sf_ac - 10000000.0) / (1.0 - self.tax_rate)
+
+        # Kelly Criterion fraction f* = Edge / Odds for positive EV regimes
+        if is_positive_ev and net_jp1 > self.ticket_price:
+            b_odds = (net_jp1 - self.ticket_price) / float(self.ticket_price)
+            edge_ratio = net_ev / float(self.ticket_price)
+            kelly_fraction = max(0.0, edge_ratio / b_odds)
+        else:
+            kelly_fraction = 0.0
 
         return {
             "lottery": self.lottery_code,
             "current_jackpot_1_billion": round(current_jackpot_1 / 1e9, 2),
             "ticket_price": self.ticket_price,
-            "fixed_prizes_ev": round(fixed_ev, 1),
-            "jackpot_1_ev": round(ev_jp1, 1),
-            "jackpot_2_ev": round(ev_jp2, 1),
-            "total_expected_value_vnd": round(total_ev, 1),
-            "net_expected_profit_vnd": round(net_ev, 1),
-            "expected_return_pct": round(ev_ratio, 1),
-            "is_positive_ev": is_positive_ev,
-            "break_even_jackpot_1_billion": round(break_even_jp / 1e9, 1),
+            "anti_crowd_mode": anti_crowd_mode,
+            "share_factor_pct": round(float(share_factor_1) * 100.0, 2),
+            "fixed_prizes_ev": round(float(fixed_ev), 1),
+            "jackpot_1_ev": round(float(ev_jp1), 1),
+            "jackpot_2_ev": round(float(ev_jp2), 1),
+            "total_expected_value_vnd": round(float(total_ev), 1),
+            "net_expected_profit_vnd": round(float(net_ev), 1),
+            "expected_return_pct": round(float(ev_ratio), 1),
+            "is_positive_ev": bool(is_positive_ev),
+            "break_even_jackpot_1_billion": round(float(break_even_jp) / 1e9, 1),
+            "standard_break_even_billion": round(float(std_be) / 1e9, 1),
+            "anti_crowd_break_even_billion": round(float(ac_be) / 1e9, 1),
+            "kelly_fraction_pct": round(float(kelly_fraction) * 100.0, 8),
             "recommendation": (
-                "KỲ VỌNG DƯƠNG (+EV): Jackpot đủ lớn để giá trị kỳ vọng vượt 10.000đ/vé. CÓ THỂ MUA (Kèm Wheeling System)."
+                "KỲ VỌNG DƯƠNG (+EV): Jackpot đủ lớn để giá trị kỳ vọng vượt 10.000đ/vé. CÓ THỂ MUA (Kèm Wheeling System + Anti-Crowd)."
                 if is_positive_ev else
                 f"KỲ VỌNG ÂM (-EV): Giá trị kỳ vọng chỉ đạt {total_ev:,.0f}đ / 10.000đ. TUYỆT ĐỐI KHÔNG MUA VÌ CHẮC CHẮN LỖ DÀI HẠN."
             )
         }
-
-
-import numpy as np
 

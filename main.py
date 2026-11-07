@@ -27,6 +27,7 @@ from src.strategies import (
     MarkovTransitionStrategy,
     MLRankingStrategy,
     RandomBaselineStrategy,
+    RecursiveAdaptiveStrategy,
     XGBoostRankingStrategy,
 )
 from src.wheeling import CombinatorialWheeler
@@ -102,6 +103,7 @@ def run_pipeline(
 
     # 4. Strategy Setup & Walk-Forward Backtesting
     logger.info(f"Bước 4: Tiến hành Walk-Forward Backtesting trên {test_draws} kỳ gần nhất...")
+    rec_strat = RecursiveAdaptiveStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], alpha=0.04, random_state=42)
     strategies = [
         RandomBaselineStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], random_state=42),
         HotFrequencyStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], lookback_window=lookback_window, random_state=42),
@@ -110,7 +112,8 @@ def run_pipeline(
         MLRankingStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], train_window=200, model_type="logreg", random_state=42),
         XGBoostRankingStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], train_window=200, random_state=42),
         MarkovTransitionStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], random_state=42),
-        GameTheoryAntiCrowdStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], random_state=42)
+        GameTheoryAntiCrowdStrategy(total_numbers=specs["total_numbers"], pick_count=specs["pick_count"], random_state=42),
+        rec_strat,
     ]
 
     backtester = VietlottBacktester(
@@ -135,14 +138,15 @@ def run_pipeline(
         tickets = strat.generate_tickets(df, num_tickets=suggest_count)
         next_draw_suggestions[strat.name] = tickets
 
-    # Combinatorial Wheeling System (Covering Design)
+    # Combinatorial Wheeling System (Covering Design powered by Recursive Adaptive Top-10)
     wheeler = CombinatorialWheeler(pick_count=specs["pick_count"])
-    top_pool = sorted(list(set(
-        [x["number"] for x in hot_cold_info["hot_numbers"][:5]] +
-        [x["number"] for x in hot_cold_info["overdue_numbers"][:5]]
-    )))
+    top_pool, pool_weights = rec_strat.get_top_candidates(df, top_k=10)
     wheel_res = wheeler.generate_abbreviated_wheel(
-        top_pool, target_guarantee=3, condition_drawn=4, max_tickets=suggest_count
+        top_pool,
+        target_guarantee=3,
+        condition_drawn=4,
+        max_tickets=suggest_count,
+        number_weights=pool_weights
     )
     next_draw_suggestions[f"Wheeling System (Bảo đảm {wheel_res['guarantee_coverage_pct']}% 3-if-4)"] = wheel_res["tickets"]
 

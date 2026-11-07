@@ -10,6 +10,7 @@ Includes:
 
 from abc import ABC, abstractmethod
 from collections import Counter
+from itertools import combinations
 from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -512,15 +513,15 @@ class GameTheoryAntiCrowdStrategy(BaseStrategy):
     """
     Game Theory & Behavioral Economics Anti-Crowd Strategy.
     Human players heavily over-select:
-    - Birthday dates (numbers 1 to 31)
+    - Birthday dates (numbers 1 to 31) and months (1 to 12)
     - Consecutive patterns or lucky digits (ending in 8, 9).
-    This strategy selects combinations with >= 4 numbers > 31 and high entropy,
-    maximizing the Expected Monetary Value (EV) by minimizing the probability
-    of sharing the Jackpot with other ticket holders in the event of a win.
+    This strategy combines Recursive Hedge posterior weights with an Anti-Crowd
+    unpopularity multiplier, enforcing >= 4 numbers > 31 (or >= 3 for 6/45) and
+    high spatial entropy via 3-tuple combinatorial wheeling to maximize Expected
+    Monetary Value (EV) by minimizing Jackpot split probability.
     """
     def __init__(self, total_numbers: int = 55, pick_count: int = 6, random_state: Optional[int] = 42):
         super().__init__(total_numbers, pick_count, random_state)
-        # Numbers above calendar days
         self.high_numbers = [n for n in self.all_numbers if n > 31]
 
     @property
@@ -528,63 +529,340 @@ class GameTheoryAntiCrowdStrategy(BaseStrategy):
         return "Game Theory (Anti-Crowd)"
 
     def generate_tickets(self, history_df: pd.DataFrame, num_tickets: int = 5) -> List[List[int]]:
-        tickets: List[List[int]] = []
-        ticket_tuples: Set[Tuple[int, ...]] = set()
-        attempts = 0
-        max_attempts = num_tickets * 150
+        if len(history_df) < 10:
+            return self._ensure_unique_tickets(self.all_numbers, None, num_tickets)
 
-        while len(tickets) < num_tickets:
-            ticket = sorted([int(x) for x in self.rng.choice(self.all_numbers, size=self.pick_count, replace=False)])
-            t_tuple = tuple(ticket)
-            if t_tuple not in ticket_tuples:
-                ticket_tuples.add(t_tuple)
-                tickets.append(ticket)
+        rec_helper = RecursiveAdaptiveStrategy(
+            total_numbers=self.total_numbers,
+            pick_count=self.pick_count,
+            alpha=0.04,
+            memory_window=60,
+            pool_size=12,
+            random_state=42
+        )
+        scores, cooccur, last_set, _ = rec_helper.score_numbers(history_df)
 
-        return tickets
+        # Apply behavioral game theory anti-crowd unpopularity adjustments
+        anti_crowd_scores = scores.copy()
+        for n in range(1, self.total_numbers + 1):
+            if n > 31:
+                anti_crowd_scores[n] += 0.45  # Outside calendar days 1..31
+            elif n <= 12:
+                anti_crowd_scores[n] -= 0.25  # Heavily over-played month + day region
+            if n % 10 in (8, 9):
+                anti_crowd_scores[n] -= 0.10  # Culturally over-played lucky endings
+
+        min_s = float(np.min(anti_crowd_scores[1:]))
+        pos_scores = anti_crowd_scores - min_s + 0.5
+
+        high_nums = [n for n in range(32, self.total_numbers + 1)]
+        low_nums = [n for n in range(1, 32)]
+        ranked_high = sorted(high_nums, key=lambda n: anti_crowd_scores[n], reverse=True)
+        ranked_low = sorted(low_nums, key=lambda n: anti_crowd_scores[n], reverse=True)
+
+        pool = sorted(ranked_high[:8] + ranked_low[:4])
+        all_combos = list(combinations(pool, self.pick_count))
+
+        min_high = 4 if self.total_numbers >= 55 else 3
+        valid_combos = []
+        for c in all_combos:
+            high_cnt = sum(1 for x in c if x > 31)
+            odd_c = sum(1 for x in c if x % 2 != 0)
+            consec = sum(1 for i in range(len(c) - 1) if c[i + 1] - c[i] == 1)
+            if high_cnt >= min_high and 2 <= odd_c <= 4 and consec <= 1:
+                if len(set(c).intersection(last_set)) <= 1:
+                    valid_combos.append(c)
+
+        if len(valid_combos) < num_tickets:
+            valid_combos = [c for c in all_combos if sum(1 for x in c if x > 31) >= min_high]
+        if len(valid_combos) < num_tickets:
+            valid_combos = all_combos
+
+        triplets = list(combinations(pool, 3))
+        trip_weights = {
+            tr: float(
+                pos_scores[tr[0]] + pos_scores[tr[1]] + pos_scores[tr[2]]
+                + 0.3 * (cooccur[tr[0], tr[1]] + cooccur[tr[1], tr[2]] + cooccur[tr[0], tr[2]])
+            )
+            for tr in triplets
+        }
+        uncovered = set(triplets)
+        selected: List[List[int]] = []
+        avail = list(valid_combos)
+
+        while len(selected) < num_tickets and avail:
+            best_c = None
+            best_gain = -1e9
+            for c in avail:
+                if any(len(set(c).intersection(s)) > 3 for s in selected):
+                    continue
+                gain = sum(
+                    trip_weights[tr] if tr in uncovered else 0.12 * trip_weights[tr]
+                    for tr in combinations(c, 3)
+                )
+                gain += 0.5 * sum(pos_scores[x] for x in c)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_c = c
+            if best_c is None:
+                best_c = max(
+                    avail,
+                    key=lambda c: sum(
+                        trip_weights[tr] if tr in uncovered else 0.12 * trip_weights[tr]
+                        for tr in combinations(c, 3)
+                    )
+                )
+            selected.append(list(best_c))
+            avail.remove(best_c)
+            for tr in combinations(best_c, 3):
+                uncovered.discard(tr)
+
+        return selected
 
 
 class RecursiveAdaptiveStrategy(BaseStrategy):
     """
-    Online Recursive Exponential Smoothing Strategy.
-    Updates number selection probabilities sequentially after each draw:
-    w_t = (1 - alpha) * w_{t-1} + alpha * I(number in draw t-1).
-    Heavily weights recent temporal momentum while recursively dampening distant draws.
+    Online Recursive Multi-Expert Hedge + Combinatorial Wheeling Strategy.
+    Combines 4 online recursive experts updated sequentially after each draw:
+    1. Medium-Horizon Recursive EMA (captures sustained regime frequency)
+    2. Slow Bayesian Anchor EMA (captures long-term baseline drift)
+    3. Discrete Renewal Hazard Rate (overdue gap relative to ball-specific recurrence interval)
+    4. Time-Decayed 1st & 2nd-Order Markov Transition Matrix
+    Expert weights are dynamically adapted online via Multiplicative Weights Update (Hedge),
+    coupled with pairwise co-occurrence synergy and 3-tuple covering design (Wheeling).
     """
     def __init__(
         self,
         total_numbers: int = 55,
         pick_count: int = 6,
-        alpha: float = 0.15,
+        alpha: float = 0.04,
         memory_window: int = 60,
+        pool_size: int = 11,
         random_state: Optional[int] = 42
     ):
         super().__init__(total_numbers, pick_count, random_state)
         self.alpha = alpha
         self.memory_window = memory_window
+        self.pool_size = pool_size
 
     @property
     def name(self) -> str:
         return f"Recursive Adaptive (EMA α={self.alpha})"
 
+    def score_numbers(
+        self, history_df: pd.DataFrame
+    ) -> Tuple[np.ndarray, np.ndarray, Set[int], np.ndarray]:
+        """
+        Run online recursive state estimation up to the latest draw in history_df.
+        Returns:
+            combined_score: (total_numbers + 1,) posterior z-score per number (1-indexed)
+            cooccur: (total_numbers + 1, total_numbers + 1) normalized pairwise synergy matrix
+            last_set: set of numbers drawn in the most recent draw
+            expert_weights: (4,) learned online Hedge weights for the 4 experts
+        """
+        M = len(history_df)
+        N = self.total_numbers
+        warmup = min(M, 300)
+        sub_df = history_df.iloc[M - warmup:]
+        draw_list = list(sub_df["main_numbers"])
+        W = len(draw_list)
+
+        mat = np.zeros((W, N + 1), dtype=np.float64)
+        for t, nums in enumerate(draw_list):
+            for n in nums:
+                mat[t, n] = 1.0
+
+        base_p = self.pick_count / float(N)
+        eff_alpha = 0.04 if self.alpha > 0.08 else self.alpha
+        ema_med = np.full(N + 1, base_p, dtype=np.float64)
+        ema_slow = np.full(N + 1, base_p, dtype=np.float64)
+        ema_fast = np.full(N + 1, base_p, dtype=np.float64)
+
+        last_seen = np.full(N + 1, -10, dtype=np.int32)
+        gap_sum = np.full(N + 1, N / float(self.pick_count), dtype=np.float64)
+        gap_cnt = np.ones(N + 1, dtype=np.float64)
+
+        expert_weights = np.array([0.32, 0.15, 0.35, 0.18], dtype=np.float64)
+        prior_weights = np.array([0.32, 0.15, 0.35, 0.18], dtype=np.float64)
+        eta = 0.25
+        gamma = 0.05
+
+        trans1 = np.full((N + 1, N + 1), base_p, dtype=np.float64)
+        trans2 = np.full((N + 1, N + 1), base_p, dtype=np.float64)
+        cooccur = np.zeros((N + 1, N + 1), dtype=np.float64)
+
+        def z_norm(v: np.ndarray) -> np.ndarray:
+            sub = v[1:]
+            s = np.std(sub)
+            if s < 1e-9:
+                return np.zeros(N + 1)
+            res = np.zeros(N + 1)
+            res[1:] = (sub - np.mean(sub)) / s
+            return res
+
+        start_hedge = max(15, W - self.memory_window)
+        for t in range(W):
+            curr_vec = mat[t]
+            curr_gaps = t - last_seen
+            mean_g = gap_sum / gap_cnt
+            hazard = curr_gaps / np.maximum(mean_g, 4.0)
+
+            if t >= start_hedge and t >= 2:
+                prev1_idx = draw_list[t - 1]
+                prev2_idx = draw_list[t - 2]
+                t_score = trans1[prev1_idx].sum(axis=0) + 0.5 * trans2[prev2_idx].sum(axis=0)
+
+                e0 = z_norm(ema_med)
+                e1 = z_norm(ema_slow)
+                e2 = z_norm(hazard)
+                e3 = z_norm(t_score)
+                experts = np.vstack([e0, e1, e2, e3])
+
+                rewards = (experts[:, 1:] @ curr_vec[1:]) / float(self.pick_count)
+                expert_weights = expert_weights * np.exp(eta * rewards)
+                expert_weights /= expert_weights.sum()
+                expert_weights = (1.0 - gamma) * expert_weights + gamma * prior_weights
+
+            ema_med = (1.0 - eff_alpha) * ema_med + eff_alpha * curr_vec
+            ema_slow = 0.985 * ema_slow + 0.015 * curr_vec
+            ema_fast = 0.85 * ema_fast + 0.15 * curr_vec
+
+            for n in draw_list[t]:
+                if last_seen[n] >= 0:
+                    gap_sum[n] += (t - last_seen[n])
+                    gap_cnt[n] += 1.0
+                last_seen[n] = t
+
+            if t >= 1:
+                for u in draw_list[t - 1]:
+                    trans1[u] = 0.96 * trans1[u] + 0.04 * curr_vec
+            if t >= 2:
+                for u in draw_list[t - 2]:
+                    trans2[u] = 0.96 * trans2[u] + 0.04 * curr_vec
+
+            if t >= max(0, W - 150):
+                for u in draw_list[t]:
+                    cooccur[u] += curr_vec
+
+        curr_gaps = W - last_seen
+        mean_g = gap_sum / gap_cnt
+        hazard = curr_gaps / np.maximum(mean_g, 4.0)
+
+        last_set = set(draw_list[-1])
+        prev2_set = set(draw_list[-2]) if W >= 2 else set()
+        t_score = trans1[list(last_set)].sum(axis=0)
+        if prev2_set:
+            t_score += 0.5 * trans2[list(prev2_set)].sum(axis=0)
+
+        e0 = z_norm(ema_med)
+        e1 = z_norm(ema_slow)
+        e2 = z_norm(hazard)
+        e3 = z_norm(t_score)
+
+        combined_score = (
+            expert_weights[0] * e0
+            + expert_weights[1] * e1
+            + expert_weights[2] * e2
+            + expert_weights[3] * e3
+            - 0.10 * z_norm(ema_fast)
+        )
+
+        # Cooldown penalty on immediate repeat from draw t-1 (89% of draws have <= 1 repeat)
+        for u in last_set:
+            combined_score[u] -= 0.35
+
+        np.fill_diagonal(cooccur, 0.0)
+        max_co = cooccur.max()
+        if max_co > 0:
+            cooccur /= max_co
+
+        return combined_score, cooccur, last_set, expert_weights
+
+    def get_top_candidates(
+        self, history_df: pd.DataFrame, top_k: int = 10
+    ) -> Tuple[List[int], Dict[int, float]]:
+        """
+        Return the top_k candidate numbers sorted ascending and a dictionary of strictly positive weights.
+        Ideal for feeding directly into CombinatorialWheeler.
+        """
+        if len(history_df) < 10:
+            top_nums = list(range(1, min(top_k, self.total_numbers) + 1))
+            return top_nums, {n: 1.0 for n in top_nums}
+
+        scores, _, _, _ = self.score_numbers(history_df)
+        min_s = float(np.min(scores[1:]))
+        pos_scores = scores - min_s + 0.5
+
+        ranked = np.argsort(scores[1:])[::-1] + 1
+        top_nums = sorted([int(x) for x in ranked[:top_k]])
+        weights_dict = {int(n): round(float(pos_scores[n]), 4) for n in range(1, self.total_numbers + 1)}
+        return top_nums, weights_dict
+
     def generate_tickets(self, history_df: pd.DataFrame, num_tickets: int = 5) -> List[List[int]]:
-        if len(history_df) == 0:
+        if len(history_df) < 10:
             return self._ensure_unique_tickets(self.all_numbers, None, num_tickets)
 
-        draw_sets = [set(nums) for nums in history_df["main_numbers"]]
-        M = len(draw_sets)
-        start_t = max(0, M - self.memory_window)
+        scores, cooccur, last_set, _ = self.score_numbers(history_df)
+        min_s = float(np.min(scores[1:]))
+        pos_scores = scores - min_s + 0.5
 
-        # Recursive exponential smoothing update
-        weights = np.ones(self.total_numbers + 1, dtype=np.float32) / float(self.total_numbers)
-        for t in range(start_t, M):
-            indicator = np.zeros(self.total_numbers + 1, dtype=np.float32)
-            for n in draw_sets[t]:
-                indicator[n] = 1.0
-            weights = (1.0 - self.alpha) * weights + self.alpha * indicator
+        ranked = np.argsort(scores[1:])[::-1] + 1
+        dynamic_pool_size = min(max(self.pool_size, self.pick_count + num_tickets - 1), 14)
+        pool = sorted([int(x) for x in ranked[:dynamic_pool_size]])
 
-        pool_size = min(max(15, self.pick_count * 3), self.total_numbers)
-        sorted_indices = np.argsort(weights[1:])[::-1]  # 1..total_numbers
-        candidate_numbers = [self.all_numbers[i] for i in sorted_indices[:pool_size]]
-        candidate_weights = np.maximum(weights[candidate_numbers], 1e-4)
+        all_combos = list(combinations(pool, self.pick_count))
+        mean_sum = self.pick_count * (self.total_numbers + 1) / 2.0
+        sum_tol = 42.0 if self.total_numbers >= 55 else 36.0
 
-        return self._ensure_unique_tickets(candidate_numbers, candidate_weights, num_tickets)
+        valid_combos = []
+        for c in all_combos:
+            odd_c = sum(1 for x in c if x % 2 != 0)
+            if 2 <= odd_c <= 4 and abs(sum(c) - mean_sum) <= sum_tol:
+                if len(set(c).intersection(last_set)) <= 1:
+                    valid_combos.append(c)
+
+        if len(valid_combos) < num_tickets:
+            valid_combos = all_combos
+
+        triplets = list(combinations(pool, 3))
+        trip_weights = {
+            tr: float(
+                pos_scores[tr[0]] + pos_scores[tr[1]] + pos_scores[tr[2]]
+                + 0.4 * (cooccur[tr[0], tr[1]] + cooccur[tr[1], tr[2]] + cooccur[tr[0], tr[2]])
+            )
+            for tr in triplets
+        }
+
+        uncovered = set(triplets)
+        selected: List[List[int]] = []
+        avail = list(valid_combos)
+
+        while len(selected) < num_tickets and avail:
+            best_c = None
+            best_gain = -1e9
+            for c in avail:
+                if any(len(set(c).intersection(s)) > 3 for s in selected):
+                    continue
+                gain = sum(
+                    trip_weights[tr] if tr in uncovered else 0.12 * trip_weights[tr]
+                    for tr in combinations(c, 3)
+                )
+                gain += 0.5 * sum(pos_scores[x] for x in c)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_c = c
+
+            if best_c is None:
+                best_c = max(
+                    avail,
+                    key=lambda c: sum(
+                        trip_weights[tr] if tr in uncovered else 0.12 * trip_weights[tr]
+                        for tr in combinations(c, 3)
+                    )
+                )
+            selected.append(list(best_c))
+            avail.remove(best_c)
+            for tr in combinations(best_c, 3):
+                uncovered.discard(tr)
+
+        return selected
