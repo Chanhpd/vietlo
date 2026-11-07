@@ -275,10 +275,6 @@ latest_date_str = latest_draw["date"].strftime("%d/%m/%Y")
 latest_main = [int(x) for x in latest_draw["main_numbers"]]
 latest_bonus = int(latest_draw["bonus_number"]) if pd.notna(latest_draw["bonus_number"]) and latest_draw["bonus_number"] is not None else None
 
-# Also keep DailyModelTracker updated in background
-tracker = DailyModelTracker(lottery_code)
-tracker.evaluate_latest_draw()
-
 # Header
 st.title(f"🎰 Trợ Lý Dự Đoán & Đối Soát Vietlott: {lottery_short}")
 latest_balls_html = "".join([f'<span class="ball-badge">{x:02d}</span>' for x in latest_main])
