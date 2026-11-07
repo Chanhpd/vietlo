@@ -533,29 +533,6 @@ class GameTheoryAntiCrowdStrategy(BaseStrategy):
         attempts = 0
         max_attempts = num_tickets * 150
 
-        # Target: 4 or 5 numbers > 31, remainder from 1..31
-        lower_numbers = [n for n in self.all_numbers if n <= 31]
-
-        while len(tickets) < num_tickets and attempts < max_attempts:
-            attempts += 1
-            n_high = 4 if len(self.high_numbers) >= 4 else len(self.high_numbers)
-            n_low = self.pick_count - n_high
-
-            high_picks = self.rng.choice(self.high_numbers, size=n_high, replace=False).tolist()
-            low_picks = self.rng.choice(lower_numbers, size=n_low, replace=False).tolist()
-
-            ticket = sorted([int(x) for x in high_picks + low_picks])
-
-            # Filter out simple arithmetic progressions or too many consecutive numbers
-            consec = sum(1 for i in range(len(ticket) - 1) if ticket[i+1] == ticket[i] + 1)
-            if consec > 1:
-                continue
-
-            t_tuple = tuple(ticket)
-            if t_tuple not in ticket_tuples:
-                ticket_tuples.add(t_tuple)
-                tickets.append(ticket)
-
         while len(tickets) < num_tickets:
             ticket = sorted([int(x) for x in self.rng.choice(self.all_numbers, size=self.pick_count, replace=False)])
             t_tuple = tuple(ticket)
@@ -564,3 +541,50 @@ class GameTheoryAntiCrowdStrategy(BaseStrategy):
                 tickets.append(ticket)
 
         return tickets
+
+
+class RecursiveAdaptiveStrategy(BaseStrategy):
+    """
+    Online Recursive Exponential Smoothing Strategy.
+    Updates number selection probabilities sequentially after each draw:
+    w_t = (1 - alpha) * w_{t-1} + alpha * I(number in draw t-1).
+    Heavily weights recent temporal momentum while recursively dampening distant draws.
+    """
+    def __init__(
+        self,
+        total_numbers: int = 55,
+        pick_count: int = 6,
+        alpha: float = 0.15,
+        memory_window: int = 60,
+        random_state: Optional[int] = 42
+    ):
+        super().__init__(total_numbers, pick_count, random_state)
+        self.alpha = alpha
+        self.memory_window = memory_window
+
+    @property
+    def name(self) -> str:
+        return f"Recursive Adaptive (EMA α={self.alpha})"
+
+    def generate_tickets(self, history_df: pd.DataFrame, num_tickets: int = 5) -> List[List[int]]:
+        if len(history_df) == 0:
+            return self._ensure_unique_tickets(self.all_numbers, None, num_tickets)
+
+        draw_sets = [set(nums) for nums in history_df["main_numbers"]]
+        M = len(draw_sets)
+        start_t = max(0, M - self.memory_window)
+
+        # Recursive exponential smoothing update
+        weights = np.ones(self.total_numbers + 1, dtype=np.float32) / float(self.total_numbers)
+        for t in range(start_t, M):
+            indicator = np.zeros(self.total_numbers + 1, dtype=np.float32)
+            for n in draw_sets[t]:
+                indicator[n] = 1.0
+            weights = (1.0 - self.alpha) * weights + self.alpha * indicator
+
+        pool_size = min(max(15, self.pick_count * 3), self.total_numbers)
+        sorted_indices = np.argsort(weights[1:])[::-1]  # 1..total_numbers
+        candidate_numbers = [self.all_numbers[i] for i in sorted_indices[:pool_size]]
+        candidate_weights = np.maximum(weights[candidate_numbers], 1e-4)
+
+        return self._ensure_unique_tickets(candidate_numbers, candidate_weights, num_tickets)
