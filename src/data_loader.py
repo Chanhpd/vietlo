@@ -160,12 +160,13 @@ class VietlottDataLoader:
             lambda nums: sum(1 for i in range(len(nums) - 1) if nums[i+1] == nums[i] + 1)
         )
 
-        # Save processed data
-        # For CSV export, convert list to comma-separated string for compatibility
-        export_df = df.copy()
-        export_df["main_numbers_str"] = export_df["main_numbers"].apply(lambda nums: ",".join(map(str, nums)))
-        export_df.to_csv(self.processed_file, index=False)
-        logger.info(f"Saved processed dataset ({len(df)} draws) to {self.processed_file}")
+        # Save processed data only when refreshing or if file does not exist yet
+        # (prevents dirtying git working tree on read-only cloud deployments like Streamlit Cloud)
+        if force_refresh or not self.processed_file.exists():
+            export_df = df.copy()
+            export_df["main_numbers_str"] = export_df["main_numbers"].apply(lambda nums: ",".join(map(str, nums)))
+            export_df.to_csv(self.processed_file, index=False)
+            logger.info(f"Saved processed dataset ({len(df)} draws) to {self.processed_file}")
 
         return df
 
